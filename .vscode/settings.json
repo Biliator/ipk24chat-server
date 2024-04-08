@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.embeddedhtml": "html",
+        "ipk24chat-server.h": "c",
+        "wait.h": "c",
+        "unistd.h": "c",
+        "epoll.h": "c",
+        "socket.h": "c",
+        "types.h": "c"
+    }
+}
