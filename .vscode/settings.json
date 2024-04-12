@@ -6,6 +6,10 @@
         "unistd.h": "c",
         "epoll.h": "c",
         "socket.h": "c",
-        "types.h": "c"
+        "types.h": "c",
+        "type_traits": "cpp",
+        "cmath": "cpp",
+        "limits": "cpp",
+        "string.h": "c"
     }
 }

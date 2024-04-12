@@ -10,17 +10,18 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <errno.h>
 #include <sys/wait.h>
 #include <sys/poll.h>
 #include <sys/epoll.h>
+#include "client.h"
 
 #define DEFAULT_CONF_TIMEOUT 250
 #define DEFAULT_MAX_RETRANSMISSIONS 3
 #define DEFAULT_SERVER_PORT "4567"
-#define BUFFER_SIZE 1500
+#define BUFFER_SIZE 3000
 #define MAX_EVENTS 10
 
 volatile sig_atomic_t received_signal = 0;
 
 void print_help();
+int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message);
