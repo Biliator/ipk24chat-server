@@ -30,6 +30,7 @@ typedef struct Client
 
 int add_client(Client **clients, int socket, int protocol);
 Client *search_client(Client **clients, int socket);
+int search_client_name(Client *clients, char *display_name);
 void remove_client(Client **clients, int socket);
 void free_clients(Client **clients);
-int next_state(Client **clients, int socket, char *buff, char **response);
+int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type);

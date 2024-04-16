@@ -44,6 +44,19 @@ Client *search_client(Client **clients, int socket)
     return NULL;
 }
 
+int search_client_name(Client *clients, char *username)
+{
+    Client *current = clients;
+    while (current != NULL)
+    {
+        if (current->data.username != NULL)
+            if (!strcmp(current->data.username, username)) 
+                return 1;
+        current = current->next;
+    }
+    return 0;
+}
+
 void remove_client(Client **clients, int socket)
 {
     Client *current = *clients;
@@ -85,25 +98,23 @@ void free_clients(Client **clients)
     *clients = NULL;
 }
 
-int next_state(Client **clients, int socket, char *buff, char **response)
+int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type)
 {
-    struct Client *client = search_client(clients, socket);
     char *param1 = NULL;
     char *param2 = NULL;
     char *param3 = NULL;
-    enum message_type msg_type = check_message_type(buff, &param1, &param2, &param3);
+    *msg_type = check_message_type(buff, &param1, &param2, &param3);
     int result = 0;
-
-    if (msg_type == UKNOWN)
+    
+    if (*msg_type == UKNOWN)
         client->data.state = ERROR;
 
     switch (client->data.state)
     {
     case START:
-        if (msg_type == AUTH)
+        if (*msg_type == AUTH)
         {
-            // TODO CHECK ARGUMENTS VALIDATION
-            if (1)
+            if (!search_client_name(clients, param1))
             {
                 client->data.state = OPEN;
                 client->data.username = strdup(param1);
@@ -116,18 +127,29 @@ int next_state(Client **clients, int socket, char *buff, char **response)
             }
             else
             {
+                if (param1 != NULL) free(param1);
+                if (param2 != NULL) free(param2);
+                if (param3 != NULL) free(param3);
                 result = content_response(response, "NOK", "Auth fail.");
             }
         }
+        else if (*msg_type == BYE)
+        {
+            result = -2;
+        }
+        else
+        {
+            result = content_err(response, "Server", "Forbiden action!");
+        }
         break;
     case OPEN:
-        if (msg_type == MSG)
+        if (*msg_type == MSG)
         {
             if (param1 != NULL) free(param1);
             if (param2 != NULL) free(param2);
             result = -1;
         }
-        else if (msg_type == JOIN)
+        else if (*msg_type == JOIN)
         {
             if (client->data.channel != NULL) free(client->data.channel);
             client->data.channel = strdup(param1);
@@ -135,13 +157,17 @@ int next_state(Client **clients, int socket, char *buff, char **response)
             if (param1 != NULL) free(param1);
             if (param2 != NULL) free(param2);
         }
-        else if (msg_type == ERR)
+        else if (*msg_type == ERR)
         {
             result = content_bye(response);
         }
-        else if (msg_type == BYE)
+        else if (*msg_type == BYE)
         {
             result = -2;
+        }
+        else
+        {
+            result = content_err(response, "Server", "Forbiden action!");
         }
         break;
     case ERROR:

@@ -17,11 +17,15 @@
 
 #define DEFAULT_CONF_TIMEOUT 250
 #define DEFAULT_MAX_RETRANSMISSIONS 3
-#define DEFAULT_SERVER_PORT "4567"
+#define DEFAULT_SERVER_PORT 4567
+#define DEFAULT_SERVER_IP "0.0.0.0"
 #define BUFFER_SIZE 3000
 #define MAX_EVENTS 10
 
 volatile sig_atomic_t received_signal = 0;
 
 void print_help();
-int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message);
+void client_end(Client **clients, int comm_socket, int epoll_fd);
+int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message, enum message_type msg_type);
+int print_addr_port(int comm_socket, char *recv_send, const char *message_type, char *message_content);
+void connect_sockets(char *ip_address, int port);

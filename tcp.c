@@ -221,7 +221,7 @@ int content_joined_msg(char **buff, char *display_name, char *channel)
 
 int content_left_msg(char **buff, char *display_name, char *channel)
 {
-    size_t length = strlen(display_name) + strlen(channel) + 36;
+    size_t length = strlen(display_name) + strlen(channel) + 32;
     *buff = (char *) malloc(length);
 
     if (*buff == NULL)

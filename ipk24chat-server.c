@@ -9,27 +9,53 @@
 
 #include "ipk24chat-server.h"
 
+/**
+ * @brief Ctrl + C/Ctrl + D
+ * 
+ * @param signum 
+ */
 void handle_interrupt(int signum) 
 {
     (void)signum;
     received_signal = 1;
 }
 
+/**
+ * @brief prints help
+ * 
+ */
 void print_help()
 {
-
+    fprintf(stdout, 
+            "Usage: ./ipk24-chat-server -l <IPv4 address> -p <port> -d <number> -r <number> -h\n"
+            "Argument    | Default alue  | Possible values	        | Description\n"
+            "---------------------------------------------------------------------------------------------------------\n"
+            "-l          | 0.0.0.        | IPv4 address              | Server listening IP address for welcome sockets\n"
+            "-p          | 4567          | uint16	                | Server listening port for welcome sockets\n"
+            "-d          | 250           | uint16	                | UDP confirmation timeout\n"
+            "-r          | 3	            | uint8                     | Maximum number of UDP retransmissions\n"
+            "-h          | 	            |                           | Prints program help output and exits\n\n");
+    fflush(stdout);
 }
 
-int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message)
+/**
+ * @brief Sends messages to all clients in certain channel like when someone leaves or joins or sends MSG.
+ * 
+ * @param clients list of clients
+ * @param sender_socket client's socket, client that is sending message or leaving/joining channel
+ * @param channel channel the client is currently in
+ * @param message 
+ * @param msg_type type of sending message
+ * @return int return 1 if error occured, otherwise 0
+ */
+int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message, enum message_type msg_type)
 {
     Client *current = clients;
     while (current != NULL)
     {
         if (current->data.socket != sender_socket && !strcmp(channel, current->data.channel))
         {
-            
-            fprintf(stdout, "SENT %s:%s | %s %s\n", "{TO_IP}", "{TO_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-            fflush(stdout);
+            print_addr_port(current->data.socket, "SENT", message_type_enum[msg_type], "---");
             ssize_t bytes_tx = send(current->data.socket, message, strlen(message), 0);
             if (bytes_tx < 0)
             {
@@ -43,7 +69,84 @@ int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const
     return 0;
 }
 
-void connect_sockets(int port)
+/**
+ * @brief end connection with specific client
+ * 
+ * @param clients list of clients
+ * @param comm_socket client's socket
+ * @param epoll_fd 
+ * @return int 
+ */
+void client_end(Client **clients, int comm_socket, int epoll_fd)
+{
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
+    {
+        perror("epoll_ctl");
+    }
+    remove_client(clients, comm_socket);
+    close(comm_socket);
+}
+
+/**
+ * @brief End all sessions, free memmory and close all sockets
+ * 
+ * @param clients list of all currently connected clients
+ * @param server_socket_tcp tcp socket
+ * @param server_socket_udp udp socket
+ * @param epoll_fd 
+ */
+void end_server(Client **clients, int server_socket_tcp, int server_socket_udp, int epoll_fd)
+{
+    close(server_socket_tcp);
+    close(server_socket_udp);
+    Client *current = *clients;
+    while (current != NULL)
+    {
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, current->data.socket, NULL) == -1)
+        {
+            perror("epoll_ctl");
+        }
+        close(current->data.socket);
+        current = current->next;
+    }
+    free_clients(clients);
+}
+
+/**
+ * @brief prints IPv4 address and port of receiver or sender.
+ * 
+ * @param comm_socket socket of client
+ * @param recv_send RECV/SENT
+ * @param message_type type of message (MSG, BYE, ERR...)
+ * @param message_content additional information
+ * @return int return 1 if error occured, otherwise 0
+ */
+int print_addr_port(int comm_socket, char *recv_send, const char *message_type, char *message_content)
+{
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    if (getpeername(comm_socket, (struct sockaddr*) &client_addr, &addr_len) == 0)
+    {
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+        int client_port = ntohs(client_addr.sin_port);
+        fprintf(stdout, "%s %s:%d | %s %s\n", recv_send, client_ip, client_port, message_type, message_content);
+        fflush(stdout);
+        return 0;
+    }
+    else
+    {
+        perror("getpeername");
+        return 1;
+    }
+}
+
+/**
+ * @brief Proccess udp and tcp. Proccess clients with help of epoll.
+ * 
+ * @param port
+ */
+void connect_sockets(char *ip_address, int port)
 {
     // CTR + C and Ctr+ D signal
     struct sigaction sa;
@@ -83,10 +186,15 @@ void connect_sockets(int port)
 	struct sockaddr_in server_addr;
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr =  htonl(INADDR_ANY);
 	server_addr.sin_port = htons(port);
 
-    int address_size = sizeof(server_addr);
+    if (inet_pton(AF_INET, ip_address, &server_addr.sin_addr) != 1)
+    {
+        perror("ERR: inet_pton");
+        exit(EXIT_FAILURE);
+    }
+
+    socklen_t address_size = sizeof(server_addr);
 
     // UDP binding
     if (bind(server_socket_udp, (struct sockaddr *) &server_addr, address_size) < 0)
@@ -120,6 +228,7 @@ void connect_sockets(int port)
         exit(EXIT_FAILURE);
     }
 
+    // epoll event for tcp
     struct epoll_event event_tcp;
     memset(&event_tcp, 0, sizeof(struct epoll_event));
     event_tcp.events = EPOLLIN;
@@ -131,6 +240,7 @@ void connect_sockets(int port)
         exit(EXIT_FAILURE);
     }
 
+    // epoll event for udp
     struct epoll_event event_udp;
     memset(&event_udp, 0, sizeof(struct epoll_event)); 
     event_udp.events = EPOLLIN;
@@ -150,20 +260,8 @@ void connect_sockets(int port)
         struct epoll_event events[MAX_EVENTS];
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events == -1)
-        {
-            Client *current = clients;
-            while (current != NULL)
-            {
-                if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, current->data.socket, NULL) == -1)
-                {
-                    perror("epoll_ctl");
-                }
-                close(current->data.socket);
-                current = current->next;
-            }
-            close(server_socket_tcp);
-            close(server_socket_udp);
-            free_clients(&clients);
+        {   
+            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
 
             if (received_signal)
             {
@@ -179,6 +277,7 @@ void connect_sockets(int port)
 
         for (int i = 0; i < num_events; i++)
         {
+            // client connected to the server with tcp
             if (events[i].data.fd == server_socket_tcp)
             {
                 int comm_socket = accept(server_socket_tcp, address, &comm_addr_size);
@@ -201,6 +300,7 @@ void connect_sockets(int port)
                 
                 add_client(&clients, comm_socket, 0);
             } 
+            // udp connection proccess
             else if (events[i].data.fd == server_socket_udp)
             {
                 char buff[BUFFER_SIZE];
@@ -212,8 +312,8 @@ void connect_sockets(int port)
                     continue;
                 }
                 
-                fprintf(stdout, "RECV %s:%s | %s %s\n", "{FROM_IP}", "{FROM_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                fflush(stdout);
+                //fprintf(stdout, "RECV %s:%s | %s %s\n", "{FROM_IP}", "{FROM_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
+                //fflush(stdout);
 
                 int bytes_tx = sendto(server_socket_udp, buff, strlen(buff), 0, address, address_size);
                 if (bytes_tx < 0)
@@ -222,70 +322,50 @@ void connect_sockets(int port)
                     continue;
                 }
                 
-                fprintf(stdout, "SENT %s:%s | %s %s\n", "{TO_IP}", "{TO_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                fflush(stdout);
+                //fprintf(stdout, "SENT %s:%s | %s %s\n", "{TO_IP}", "{TO_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
+                //fflush(stdout);
             }
+            // tcp connection proccess
             else
             {
                 int comm_socket = events[i].data.fd;
                 char buff[BUFFER_SIZE] = {0};
                 ssize_t bytes_rx = recv(comm_socket, buff, BUFFER_SIZE, 0);
-                if (bytes_rx < 0)
+                if (bytes_rx <= 0)
                 {
                     perror("recv");
-                    // remove client from client list and close socket
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
-                    {
-                        perror("epoll_ctl");
-                    }
-                    remove_client(&clients, comm_socket);
-                    close(comm_socket);
-                    continue;
-                } 
-                else if (bytes_rx == 0)
-                {
-                    // remove client from client list and close socket
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
-                    {
-                        perror("epoll_ctl");
-                    }
-                    remove_client(&clients, comm_socket);
-                    close(comm_socket);
+                    client_end(&clients, comm_socket, epoll_fd);
                     continue;
                 }
-             
+
+                Client *client = search_client(&clients, comm_socket);
+                char *channel = strdup(client->data.channel);
                 char *response = NULL; 
-                int result = next_state(&clients, comm_socket, buff, &response);
+                enum message_type msg_type = UKNOWN ;
+                int result = next_state(clients, client, buff, &response, &msg_type);
                 if (result == 1)
                 {
-                    close(server_socket_tcp);
-                    close(server_socket_udp);
-                    Client *current = clients;
-                    while (current != NULL)
-                    {
-                        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, current->data.socket, NULL) == -1)
-                        {
-                            perror("epoll_ctl");
-                        }
-                        close(current->data.socket);
-                        current = current->next;
-                    }
-                    free_clients(&clients);
+                    end_server(&client, server_socket_tcp, server_socket_udp, epoll_fd);
                     exit(EXIT_FAILURE);
                 }
 
-                fprintf(stdout, "RECV %s:%s | %s %s\n", "{FROM_IP}", "{FROM_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                fflush(stdout);
-
+                // received UKNOWN message from client
+                if (msg_type != UKNOWN)
+                {
+                    print_addr_port(comm_socket, "RECV", message_type_enum[msg_type], "---");
+                }
+                // received BYE from client
                 if (result == -2)
                 {
-                    // remove client from client list and close socket
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
+                    // if client already use AUTH remove from list
+                    if (client->data.username != NULL)
                     {
-                        perror("epoll_ctl");
+                        if (response != NULL) free(response);
+                        response = NULL;
+                        content_left_msg(&response, client->data.display_name, client->data.channel);
+                        send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG);
                     }
-                    remove_client(&clients, comm_socket);
-                    close(comm_socket);
+                    client_end(&clients, comm_socket, epoll_fd);
                 }
                 else if (result != -1)
                 {
@@ -293,68 +373,82 @@ void connect_sockets(int port)
                     if (bytes_tx < 0)
                     {
                         perror("send");
-                        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
-                        {
-                            perror("epoll_ctl");
-                        }
-                        close(comm_socket);
-                        remove_client(&clients, comm_socket);
+                        client_end(&clients, comm_socket, epoll_fd);
+                        free(channel);
                         continue;
                     }
-
-                    fprintf(stdout, "SENT %s:%s | %s %s\n", "{TO_IP}", "{TO_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                    fflush(stdout);
 
                     // ERR message was send, now send BYE
                     if (!strncmp(response, "ERR", strlen("ERR")))
                     {
+                        print_addr_port(comm_socket, "SENT", message_type_enum[ERR], "---");
                         if (response != NULL) free(response);
                         response = NULL;
-                        content_bye(&response);
+                        if (content_bye(&response))
+                        {
+                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                            exit(EXIT_FAILURE);
+                        }
                         bytes_tx = send(comm_socket, response, strlen(response), 0);
                         if (bytes_tx < 0)
                         {
                             perror("send");
-                            if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
-                            {
-                                perror("epoll_ctl");
-                            }
-                            close(comm_socket);
-                            remove_client(&clients, comm_socket);
+                            client_end(&clients, comm_socket, epoll_fd);
+                            free(channel);
                             continue;
                         }
 
-                        fprintf(stdout, "SENT %s:%s | %s %s\n", "{TO_IP}", "{TO_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                        fflush(stdout);
+                        print_addr_port(comm_socket, "SENT", message_type_enum[BYE], "---");
 
-                        if (response != NULL) free(response);
-                        response = NULL;
-                        Client *client = search_client(&clients, comm_socket);
-                        content_left_msg(&response, client->data.display_name, client->data.channel);
-                        send_msg_to_clients(clients, comm_socket, client->data.channel, response);
-                        // remove client from client list and close socket
-                        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, comm_socket, NULL) == -1)
+                        if (client->data.display_name != NULL)
                         {
-                            perror("epoll_ctl");
+                            if (response != NULL) free(response);
+                            response = NULL;
+                            if (content_left_msg(&response, client->data.display_name, client->data.channel))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                exit(EXIT_FAILURE);
+                            }
+                            send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG);
                         }
-                        remove_client(&clients, comm_socket);
-                        close(comm_socket);
+                        client_end(&clients, comm_socket, epoll_fd);
                     }
-                    else if (!strncmp(response, "REPLY", strlen("REPLY")))
+                    // REPLY message was send
+                    else if (!strncmp(response, "REPLY OK", strlen("REPLY OK")))
                     {
+                        print_addr_port(comm_socket, "SENT", message_type_enum[REPLY], "---");
                         if (response != NULL) free(response);
                         response = NULL;
-                        Client *client = search_client(&clients, comm_socket);
-                        content_joined_msg(&response, client->data.display_name, client->data.channel);
-                        send_msg_to_clients(clients, comm_socket, client->data.channel, response);
+                        if (content_joined_msg(&response, client->data.display_name, client->data.channel))
+                        {
+                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                            exit(EXIT_FAILURE);
+                        }
+                        send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG);
+
+                        if (strcmp(channel, client->data.channel))
+                        {
+                            if (response != NULL) free(response);
+                            response = NULL;
+                            if (content_left_msg(&response, client->data.display_name, channel))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                exit(EXIT_FAILURE);
+                            }
+                            send_msg_to_clients(clients, comm_socket, channel, response, MSG);
+                        }
+                    }
+                    else if (!strncmp(response, "BYE", strlen("BYE")))
+                    {
+                        print_addr_port(comm_socket, "SENT", message_type_enum[BYE], "---");
                     }
                 }
                 else
                 {
-                    Client *client = search_client(&clients, comm_socket);
                     response = strdup(buff);
-                    send_msg_to_clients(clients, comm_socket, client->data.channel, response);
+                    send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG);
                 }
+                free(channel);
                 if (response != NULL) free(response);
                 response = NULL;
             }
@@ -367,16 +461,17 @@ int main(int argc, char *argv[])
     int opt;
     int conf_timeout = DEFAULT_CONF_TIMEOUT;
     int max_num_retransmissions = DEFAULT_MAX_RETRANSMISSIONS;
-
-    char *port = DEFAULT_SERVER_PORT;
-    char *ip_addr = NULL;
+    (void) max_num_retransmissions;
+    int port = DEFAULT_SERVER_PORT;
+    char *ip_addr = DEFAULT_SERVER_IP;
 
     while ((opt = getopt(argc, argv, "l:p:d:r:h")) != -1) 
     {
         switch (opt)
         {
             case 'l':
-                ip_addr = optarg;
+                if (strcmp(optarg, "localhost"))
+                    ip_addr = optarg;
                 break;
             case 'p':
                 if (atoi(optarg) <= 0 || atoi(optarg) > 65535) 
@@ -384,7 +479,7 @@ int main(int argc, char *argv[])
                     fprintf(stderr, "ERR: Invalid port number! Port must be between 1 and 65535!\n");
                     exit(EXIT_FAILURE);
                 }
-                port = optarg;
+                port = atoi(optarg);
                 break;
             case 'd':
                 conf_timeout = atoi(optarg);
@@ -406,12 +501,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (ip_addr == NULL)
-    {
-        fprintf(stderr, "ERR: Use './ipk24chat-server -h' for help!\n");
-        exit(EXIT_FAILURE);
-    }
-
-    connect_sockets(4567);
+    connect_sockets(ip_addr, port);
     return EXIT_SUCCESS;
 }

@@ -4,4 +4,4 @@ FILES=ipk24chat-server.c client.c tcp.c
 NAME=ipk24chat-server
 
 compile:
-	gcc $(CFLAGS_EZ) $(FILES) -o $(NAME)
+	gcc $(CFLAGS) $(FILES) -o $(NAME)
