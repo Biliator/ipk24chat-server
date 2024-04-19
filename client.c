@@ -16,6 +16,7 @@ int add_client(Client **clients, int socket, int protocol)
     new_client->data.username = NULL;
     new_client->data.display_name = NULL;
     new_client->data.secret = NULL;
+    new_client->data.msg_buff = NULL;
     new_client->next = NULL;
 
     if (*clients == NULL)
@@ -74,6 +75,7 @@ void remove_client(Client **clients, int socket)
             if (current->data.username != NULL) free(current->data.username);
             if (current->data.display_name != NULL) free(current->data.display_name);
             if (current->data.secret != NULL) free(current->data.secret);
+            if (current->data.msg_buff != NULL) free(current->data.msg_buff);
             free(current);
             return;
         }
@@ -93,6 +95,7 @@ void free_clients(Client **clients)
         if (temp->data.username != NULL) free(temp->data.username);
         if (temp->data.display_name != NULL) free(temp->data.display_name);
         if (temp->data.secret != NULL) free(temp->data.secret);
+        if (temp->data.msg_buff != NULL) free(temp->data.msg_buff);
         free(temp);
     }
     *clients = NULL;

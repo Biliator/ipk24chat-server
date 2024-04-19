@@ -22,6 +22,7 @@ static const char * const message_type_enum[] = {
     [BYE] = "BYE"
 };
 
+int find_crlf(const char *buff, ssize_t length);
 void free_params(char **buff_copy, char **param1, char **param2, char **param3);
 int tcp_check_auth(char *buff, char **username, char **display_name, char **secret);
 int tcp_check_join(char *buff, char **channel_id, char **display_name);

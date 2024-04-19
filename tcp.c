@@ -1,5 +1,20 @@
 #include "tcp.h"
 
+int find_crlf(const char *buff, ssize_t length)
+{
+    for (int i = 0; i < length - 1; i++)
+    {
+        if (buff[i] == '\r')
+        {
+            int result = 1;
+            if (i + 1 < length && buff[i + 1] == '\n')
+                result = 0;
+            return result;
+        }
+    }
+    return -1;
+}
+
 void free_params(char **buff_copy, char **param1, char **param2, char **param3)
 {
     if (*buff_copy != NULL) free(*buff_copy);

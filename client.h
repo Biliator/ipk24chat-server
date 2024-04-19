@@ -19,6 +19,7 @@ typedef struct
     char *username;
     char *display_name;
     char *secret;
+    char *msg_buff;
     enum State state;
 } Data;
 

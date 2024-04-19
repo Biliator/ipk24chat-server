@@ -55,7 +55,7 @@ int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const
     {
         if (current->data.socket != sender_socket && !strcmp(channel, current->data.channel))
         {
-            print_addr_port(current->data.socket, "SENT", message_type_enum[msg_type], "---");
+            print_addr_port(current->data.socket, "SENT", message_type_enum[msg_type]);
             ssize_t bytes_tx = send(current->data.socket, message, strlen(message), 0);
             if (bytes_tx < 0)
             {
@@ -121,7 +121,7 @@ void end_server(Client **clients, int server_socket_tcp, int server_socket_udp, 
  * @param message_content additional information
  * @return int return 1 if error occured, otherwise 0
  */
-int print_addr_port(int comm_socket, char *recv_send, const char *message_type, char *message_content)
+int print_addr_port(int comm_socket, char *recv_send, const char *message_type)
 {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
@@ -130,7 +130,7 @@ int print_addr_port(int comm_socket, char *recv_send, const char *message_type, 
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
         int client_port = ntohs(client_addr.sin_port);
-        fprintf(stdout, "%s %s:%d | %s %s\n", recv_send, client_ip, client_port, message_type, message_content);
+        fprintf(stdout, "%s %s:%d | %s\n", recv_send, client_ip, client_port, message_type);
         fflush(stdout);
         return 0;
     }
@@ -179,7 +179,7 @@ void connect_sockets(char *ip_address, int port)
 	int optval = 1;
 	if (setsockopt(server_socket_tcp, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1)
 	{
-        fprintf(stderr, "ERR: setsocket!\n");
+        perror("setsocket!\n");
         exit(EXIT_FAILURE);
 	}
 
@@ -190,7 +190,7 @@ void connect_sockets(char *ip_address, int port)
 
     if (inet_pton(AF_INET, ip_address, &server_addr.sin_addr) != 1)
     {
-        perror("ERR: inet_pton");
+        perror("inet_pton");
         exit(EXIT_FAILURE);
     }
 
@@ -263,11 +263,13 @@ void connect_sockets(char *ip_address, int port)
         {   
             end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
 
+            // Ctrl + C | Ctrl + D
             if (received_signal)
             {
                 fprintf(stdout, "Received signal, shutting down.\n");
                 exit(EXIT_SUCCESS);
             }
+            // error
             else
             {
                 perror("epoll_wait");
@@ -300,7 +302,7 @@ void connect_sockets(char *ip_address, int port)
                 
                 add_client(&clients, comm_socket, 0);
             } 
-            // udp connection proccess
+            // client connected to the server with udp
             else if (events[i].data.fd == server_socket_udp)
             {
                 char buff[BUFFER_SIZE];
@@ -352,7 +354,7 @@ void connect_sockets(char *ip_address, int port)
                 // received UKNOWN message from client
                 if (msg_type != UKNOWN)
                 {
-                    print_addr_port(comm_socket, "RECV", message_type_enum[msg_type], "---");
+                    print_addr_port(comm_socket, "RECV", message_type_enum[msg_type]);
                 }
                 // received BYE from client
                 if (result == -2)
@@ -367,6 +369,7 @@ void connect_sockets(char *ip_address, int port)
                     }
                     client_end(&clients, comm_socket, epoll_fd);
                 }
+                // other messages but not MSG or BYE
                 else if (result != -1)
                 {
                     ssize_t bytes_tx = send(comm_socket, response, strlen(response), 0);
@@ -381,7 +384,7 @@ void connect_sockets(char *ip_address, int port)
                     // ERR message was send, now send BYE
                     if (!strncmp(response, "ERR", strlen("ERR")))
                     {
-                        print_addr_port(comm_socket, "SENT", message_type_enum[ERR], "---");
+                        print_addr_port(comm_socket, "SENT", message_type_enum[ERR]);
                         if (response != NULL) free(response);
                         response = NULL;
                         if (content_bye(&response))
@@ -398,7 +401,7 @@ void connect_sockets(char *ip_address, int port)
                             continue;
                         }
 
-                        print_addr_port(comm_socket, "SENT", message_type_enum[BYE], "---");
+                        print_addr_port(comm_socket, "SENT", message_type_enum[BYE]);
 
                         if (client->data.display_name != NULL)
                         {
@@ -416,7 +419,7 @@ void connect_sockets(char *ip_address, int port)
                     // REPLY message was send
                     else if (!strncmp(response, "REPLY OK", strlen("REPLY OK")))
                     {
-                        print_addr_port(comm_socket, "SENT", message_type_enum[REPLY], "---");
+                        print_addr_port(comm_socket, "SENT", message_type_enum[REPLY]);
                         if (response != NULL) free(response);
                         response = NULL;
                         if (content_joined_msg(&response, client->data.display_name, client->data.channel))
@@ -440,7 +443,7 @@ void connect_sockets(char *ip_address, int port)
                     }
                     else if (!strncmp(response, "BYE", strlen("BYE")))
                     {
-                        print_addr_port(comm_socket, "SENT", message_type_enum[BYE], "---");
+                        print_addr_port(comm_socket, "SENT", message_type_enum[BYE]);
                     }
                 }
                 else

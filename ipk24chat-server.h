@@ -27,5 +27,5 @@ volatile sig_atomic_t received_signal = 0;
 void print_help();
 void client_end(Client **clients, int comm_socket, int epoll_fd);
 int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message, enum message_type msg_type);
-int print_addr_port(int comm_socket, char *recv_send, const char *message_type, char *message_content);
+int print_addr_port(int comm_socket, char *recv_send, const char *message_type);
 void connect_sockets(char *ip_address, int port);
