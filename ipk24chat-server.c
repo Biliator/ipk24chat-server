@@ -305,7 +305,7 @@ void connect_sockets(char *ip_address, int port)
             // client connected to the server with udp
             else if (events[i].data.fd == server_socket_udp)
             {
-                char buff[BUFFER_SIZE];
+                char buff[BUFFER_SIZE] = {0};
 
                 int bytes_rx = recvfrom(server_socket_udp, buff, BUFFER_SIZE, 0, address, &address_size);
                 if (bytes_rx < 0)
@@ -313,19 +313,22 @@ void connect_sockets(char *ip_address, int port)
                     perror("recvfrom");
                     continue;
                 }
-                
-                //fprintf(stdout, "RECV %s:%s | %s %s\n", "{FROM_IP}", "{FROM_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                //fflush(stdout);
 
-                int bytes_tx = sendto(server_socket_udp, buff, strlen(buff), 0, address, address_size);
+                if (buff[0] != 0x00)
+                {
+                    Client *client = NULL;
+                }
+                char *conf = NULL;
+                size_t conf_length = 0;
+
+                int bytes_tx = sendto(server_socket_udp, conf, strlen(conf_length), 0, address, address_size);
                 if (bytes_tx < 0)
                 {
                     perror("sendto");
                     continue;
                 }
                 
-                //fprintf(stdout, "SENT %s:%s | %s %s\n", "{TO_IP}", "{TO_PORT}", "{MESSAGE_TYPE}", "[MESSAGE_CONTENTS]");
-                //fflush(stdout);
+                free(conf);
             }
             // tcp connection proccess
             else
