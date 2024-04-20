@@ -10,6 +10,8 @@
         "type_traits": "cpp",
         "cmath": "cpp",
         "limits": "cpp",
-        "string.h": "c"
+        "string.h": "c",
+        "signal.h": "c",
+        "getopt.h": "c"
     }
 }

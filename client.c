@@ -1,5 +1,13 @@
 #include "client.h"
 
+/**
+ * @brief add new client to the list of all clients
+ * 
+ * @param clients list of all clients
+ * @param socket client's socket
+ * @param protocol protocol client connected with
+ * @return int returns 1 if error occured, otherwise 0
+ */
 int add_client(Client **clients, int socket, int protocol)
 {
     Client *new_client = (Client *) malloc(sizeof(Client));
@@ -35,6 +43,13 @@ int add_client(Client **clients, int socket, int protocol)
     return 0;
 }
 
+/**
+ * @brief searchs client with help of socket in list of all clients
+ * 
+ * @param clients list of all clients
+ * @param socket client's socket
+ * @return Client* returns pointer to the searched client or NULL
+ */
 Client *search_client(Client **clients, int socket)
 {
     Client *current = *clients;
@@ -47,6 +62,13 @@ Client *search_client(Client **clients, int socket)
     return NULL;
 }
 
+/**
+ * @brief searchs client with help of username in list of all clients
+ * 
+ * @param clients list of all clients
+ * @param username client's userName
+ * @return int returns 1 if client exists
+ */
 int search_client_name(Client *clients, char *username)
 {
     Client *current = clients;
@@ -60,6 +82,12 @@ int search_client_name(Client *clients, char *username)
     return 0;
 }
 
+/**
+ * @brief remove client with passed socket from list of all clients
+ * 
+ * @param clients list of all clients
+ * @param socket client's socket
+ */
 void remove_client(Client **clients, int socket)
 {
     Client *current = *clients;
@@ -87,6 +115,11 @@ void remove_client(Client **clients, int socket)
     }
 }
 
+/**
+ * @brief remove all clients from list of all clients and correctly free memory
+ * 
+ * @param clients list of all clients
+ */
 void free_clients(Client **clients)
 {
     Client *current = *clients;
@@ -105,6 +138,15 @@ void free_clients(Client **clients)
     *clients = NULL;
 }
 
+/**
+ * @brief modify client's message buffer, either by adding new string or connecting old
+ * string with new one
+ * 
+ * @param client
+ * @param buff new string
+ * @param buff_len new string's length
+ * @return int returns 1 if error occured, otherwise 0
+ */
 int modify_client_buff(Client **client, const char *buff, size_t buff_len)
 {
     if ((*client)->data.msg_buff == NULL)
@@ -134,7 +176,19 @@ int modify_client_buff(Client **client, const char *buff, size_t buff_len)
     return 0;
 }
 
-
+/**
+ * @brief Decide about client's next state and create response message.
+ * Each new client starts with state START. Saves parameters in message into
+ * param1, param2, param3. (displayName, userName, secret, channel, etc.)
+ * 
+ * @param clients list of all clients
+ * @param client 
+ * @param buff received message from client
+ * @param response response to the client
+ * @param msg_type message type of received message from client
+ * @return int result returns 1 if error occured, -1 if received message is MSG type, -2 if
+ * received message is BYE type, everything else is 0
+ */
 int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type)
 {
     char *param1 = NULL;

@@ -38,6 +38,12 @@ void print_help()
     fflush(stdout);
 }
 
+/**
+ * @brief helps with repetitive code to free char pointers
+ * 
+ * @param string1 
+ * @param string2 
+ */
 void free_char_pointers(char **string1, char **string2)
 {
     if (*string1 != NULL) free(*string1);
@@ -154,6 +160,7 @@ int print_addr_port(int comm_socket, char *recv_send, const char *message_type)
 /**
  * @brief Proccess udp and tcp. Proccess clients with help of epoll.
  * 
+ * @param ip_address IPv4
  * @param port
  */
 void connect_sockets(char *ip_address, int port)
