@@ -6,9 +6,9 @@ int find_crlf(const char *buff, ssize_t length)
     {
         if (buff[i] == '\r')
         {
-            int result = 1;
+            int result = 0;
             if (i + 1 < length && buff[i + 1] == '\n')
-                result = 0;
+                result = 1;
             return result;
         }
     }

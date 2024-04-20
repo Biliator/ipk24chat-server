@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <sys/poll.h>
 #include <sys/epoll.h>
+#include <errno.h>
 #include "client.h"
 
 #define DEFAULT_CONF_TIMEOUT 250

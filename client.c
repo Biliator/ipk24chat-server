@@ -11,6 +11,8 @@ int add_client(Client **clients, int socket, int protocol)
 
     new_client->data.socket = socket;
     new_client->data.protocol = protocol;
+    new_client->data.lsb = 0x00;
+    new_client->data.msb = 0x00;
     new_client->data.channel = strdup("default");
     new_client->data.state = START;
     new_client->data.username = NULL;
@@ -77,6 +79,7 @@ void remove_client(Client **clients, int socket)
             if (current->data.secret != NULL) free(current->data.secret);
             if (current->data.msg_buff != NULL) free(current->data.msg_buff);
             free(current);
+            current = NULL;
             return;
         }
         prev = current;
@@ -97,9 +100,40 @@ void free_clients(Client **clients)
         if (temp->data.secret != NULL) free(temp->data.secret);
         if (temp->data.msg_buff != NULL) free(temp->data.msg_buff);
         free(temp);
+        temp = NULL;
     }
     *clients = NULL;
 }
+
+int modify_client_buff(Client **client, const char *buff, size_t buff_len)
+{
+    if ((*client)->data.msg_buff == NULL)
+    {
+        (*client)->data.msg_buff = malloc(buff_len + 1);
+        if ((*client)->data.msg_buff == NULL)
+        {
+            fprintf(stderr, "Memory allocation failed\n");
+            return 1;
+        }
+        memcpy((*client)->data.msg_buff, buff, buff_len);
+        (*client)->data.msg_buff[buff_len] = '\0';
+    }
+    else
+    {
+        size_t msg_buff_len = strlen((*client)->data.msg_buff);
+        char *new_msg_buff = realloc((*client)->data.msg_buff, msg_buff_len + buff_len + 1);
+        if (new_msg_buff == NULL)
+        {
+            fprintf(stderr, "Memory allocation failed\n");
+            return 1;
+        }
+        memcpy(new_msg_buff + msg_buff_len, buff, buff_len);
+        new_msg_buff[msg_buff_len + buff_len] = '\0';
+        (*client)->data.msg_buff = new_msg_buff;
+    }
+    return 0;
+}
+
 
 int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type)
 {
@@ -150,6 +184,12 @@ int next_state(Client *clients, Client *client, char *buff, char **response, enu
         {
             if (param1 != NULL) free(param1);
             if (param2 != NULL) free(param2);
+            *response = strdup(buff);
+            if (*response == NULL)
+            {
+                fprintf(stderr, "ERROR: Memory allocation failed!\n");
+                return 1;
+            }
             result = -1;
         }
         else if (*msg_type == JOIN)
