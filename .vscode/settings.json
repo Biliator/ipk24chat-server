@@ -12,6 +12,8 @@
         "limits": "cpp",
         "string.h": "c",
         "signal.h": "c",
-        "getopt.h": "c"
+        "getopt.h": "c",
+        "stdio.h": "c",
+        "message_type_enum.h": "c"
     }
 }

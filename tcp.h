@@ -1,26 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
-enum message_type
-{
-    AUTH,
-    MSG,
-    JOIN,
-    REPLY,
-    ERR,
-    BYE,
-    UKNOWN
-};
-
-static const char * const message_type_enum[] = {
-	[AUTH] = "AUTH",
-	[MSG] = "MSG",
-	[JOIN] = "JOIN",
-    [REPLY] = "REPLY",
-	[ERR] = "ERR",
-    [BYE] = "BYE"
-};
+#include "message_type_enum.h"
 
 int find_crlf(const char *buff, ssize_t length);
 void free_params(char **buff_copy, char **param1, char **param2, char **param3);

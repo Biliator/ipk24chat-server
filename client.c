@@ -179,7 +179,10 @@ int modify_client_buff(Client **client, const char *buff, size_t buff_len)
 /**
  * @brief Decide about client's next state and create response message.
  * Each new client starts with state START. Saves parameters in message into
- * param1, param2, param3. (displayName, userName, secret, channel, etc.)
+ * param1, param2, param3. (displayName, userName, secret, channel, etc.).
+ * Calls functions like check_message_type, to verify message integrity and
+ * extract parameters.
+ * Calls functions starting with content_* to build a response message.
  * 
  * @param clients list of all clients
  * @param client 
@@ -273,5 +276,119 @@ int next_state(Client *clients, Client *client, char *buff, char **response, enu
     default:
         break;
     }
+    return result;
+}
+
+//---------------------------------------------UDP---------------------------------------------
+
+int next_state_udp(Client *clients, Client *client, char *buff, char **response, size_t *response_length, enum message_type *msg_type)
+{
+    int result = 0;
+    char *param1 = NULL;
+    char *param2 = NULL;
+    char *param3 = NULL;
+
+    *msg_type = check_message_type_udp(buff, &param1, &param2, &param3);
+
+    if (*msg_type == INT_ERR)
+    {
+        if (param1 != NULL) free(param1);
+        if (param2 != NULL) free(param2);
+        if (param3 != NULL) free(param3);
+        param1 = NULL;
+        param2 = NULL;
+        param3 = NULL;
+        return 1;
+    }
+
+    switch (client->data.state)
+    {
+    case START:
+        if (*msg_type == AUTH)
+        {
+            char *message_contents = NULL;
+            int result = 0;
+            if (!search_client_name(clients, param1))
+            {
+                result = 1;
+                message_contents = strdup("Auth success.");
+                client->data.state = OPEN;
+                if (message_contents == NULL)
+                {
+                    fprintf(stderr, "ERR: Memory allocation failed!\n");
+                    return 1;
+                }
+            }
+            else
+            {
+                message_contents = strdup("Auth fail.");
+                if (message_contents == NULL)
+                {
+                    fprintf(stderr, "ERR: Memory allocation failed!\n");
+                    return 1;
+                }
+            }
+
+            result = reply(response, response_length, client->data.lsb, client->data.lsb, result, (uint8_t) buff[1], (uint8_t) buff[2], message_contents);
+            if (message_contents != NULL) free(message_contents);
+        }
+        else if (*msg_type == BYE)
+        {
+            result = -2;
+        }
+        else if (*msg_type == ERR)
+        {
+            result = bye(response, response_length, client->data.lsb, client->data.msb);
+        }
+        else
+        {
+            result = err(response, response_length, client->data.lsb, client->data.msb, "Server", "Uknown message!");
+        }
+        break;
+    case OPEN:
+        if (*msg_type == MSG)
+        {
+            if (msg(response, response_length, (uint8_t) 0, (uint8_t) 0, param1, param2))
+            {
+                fprintf(stderr, "ERROR: Memory allocation failed!\n");
+                if (param1 != NULL) free(param1);
+                if (param2 != NULL) free(param2);
+                return 1;
+            }
+            result = -1;
+        }
+        else if (*msg_type == JOIN)
+        {
+            if (client->data.channel != NULL) free(client->data.channel);
+            client->data.channel = strdup(param1);
+            result = reply(response, response_length, client->data.lsb, client->data.msb, 1, (uint8_t) buff[1], (uint8_t) buff[2], "Join success.");
+        }
+        else if (*msg_type == ERR)
+        {
+            result = bye(response, response_length, client->data.lsb, client->data.msb);
+        }
+        else if (*msg_type == BYE)
+        {
+            result = -2;
+        }
+        else if (*msg_type == CONFIRM)
+        {
+            
+        }
+        else
+        {
+            result = err(response, response_length, client->data.lsb, client->data.msb, "Server", "Uknown message!");
+        }
+        break;
+    default:
+        break;
+    }
+    
+    if (param1 != NULL) free(param1);
+    if (param2 != NULL) free(param2);
+    if (param3 != NULL) free(param3);
+    param1 = NULL;
+    param2 = NULL;
+    param3 = NULL;
     return result;
 }

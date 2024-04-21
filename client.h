@@ -3,6 +3,7 @@
 #include <string.h>
 #include <netdb.h>
 #include "tcp.h"
+#include "udp.h"
 
 enum State
 {
@@ -24,6 +25,8 @@ typedef struct
     char *secret;
     char *msg_buff;
     enum State state;
+    struct sockaddr_storage client_addr;
+    socklen_t client_addr_len;
 } Data;
 
 typedef struct Client
@@ -39,3 +42,5 @@ void remove_client(Client **clients, int socket);
 void free_clients(Client **clients);
 int modify_client_buff(Client **client, const char *buff, size_t buff_len);
 int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type);
+
+int next_state_udp(Client *clients, Client *client, char *buff, char **response, size_t *response_length, enum message_type *msg_type);

@@ -27,14 +27,15 @@ void handle_interrupt(int signum)
 void print_help()
 {
     fprintf(stdout, 
-            "Usage: ./ipk24-chat-server -l <IPv4 address> -p <port> -d <number> -r <number> -h\n"
-            "Argument    | Default alue  | Possible values	        | Description\n"
+            "\n\n"
+            "Usage: ./ipk24-chat-server -l <IPv4 address> -p <port> -d <number> -r <number> -h\n\n"
+            "Argument    | Default alue  | Possible values	         | Description\n"
             "---------------------------------------------------------------------------------------------------------\n"
             "-l          | 0.0.0.        | IPv4 address              | Server listening IP address for welcome sockets\n"
-            "-p          | 4567          | uint16	                | Server listening port for welcome sockets\n"
-            "-d          | 250           | uint16	                | UDP confirmation timeout\n"
-            "-r          | 3	            | uint8                     | Maximum number of UDP retransmissions\n"
-            "-h          | 	            |                           | Prints program help output and exits\n\n");
+            "-p          | 4567          | uint16	                 | Server listening port for welcome sockets\n"
+            "-d          | 250           | uint16	                 | UDP confirmation timeout\n"
+            "-r          | 3	         | uint8                     | Maximum number of UDP retransmissions\n"
+            "-h          | 	             |                           | Prints program help output and exits\n\n");
     fflush(stdout);
 }
 
@@ -67,7 +68,7 @@ int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const
     Client *current = clients;
     while (current != NULL)
     {
-        if (current->data.socket != sender_socket && !strcmp(channel, current->data.channel))
+        if (current->data.socket != sender_socket && !strcmp(channel, current->data.channel) && current->data.protocol == 0)
         {
             if (print_addr_port(current->data.socket, "SENT", message_type_enum[msg_type]))
                return 1;
@@ -81,6 +82,46 @@ int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const
         current = current->next;
     }
     
+    return 0;
+}
+
+/**
+ * @brief Sends messages to all clients in certain channel like when someone leaves or joins or sends MSG.
+ * UDP
+ * 
+ * @param clients list of clients
+ * @param sender_socket client's socket, client that is sending message or leaving/joining channel
+ * @param channel channel the client is currently in
+ * @param message 
+ * @param msg_type type of sending message
+ * @return int return 1 if error occured, otherwise 0
+ */
+int send_msg_to_clients_udp(Client *clients, int sender_socket, char *channel, char **message, size_t msg_length, enum message_type msg_type)
+{
+    Client *current = clients;
+    while (current != NULL)
+    {
+        (void) msg_type;
+        if (current->data.socket != sender_socket && !strcmp(channel, current->data.channel) && current->data.protocol == 1)
+        {
+            print_addr_port_udp(current, "SENT", message_type_enum[msg_type]);
+            (*message)[1] = current->data.lsb;
+            (*message)[2] = current->data.msb;
+
+            for (int i = 0; i < (int) msg_length - 1; i++)
+                printf("%d ", (*message)[i]);
+            printf("\n");
+            int bytes_tx = sendto(current->data.socket, *message, msg_length, 0, (struct sockaddr *) &current->data.client_addr, current->data.client_addr_len);
+            if (bytes_tx < 0)
+            {
+                perror("sendto");
+                return 1;
+            }
+            message_id_increase(&current->data.lsb, &current->data.msb);
+        }
+        current = current->next;
+    }
+  
     return 0;
 }
 
@@ -155,6 +196,26 @@ int print_addr_port(int comm_socket, char *recv_send, const char *message_type)
         perror("getpeername");
         return 1;
     }
+}
+
+void *get_in_addr(struct sockaddr *sa)
+{
+    return &(((struct sockaddr_in*)sa)->sin_addr);
+}
+
+int get_in_port(struct sockaddr *sa)
+{
+    return ntohs(((struct sockaddr_in*)sa)->sin_port);
+}
+
+void print_addr_port_udp(Client *client, char *recv_send, const char *message_type)
+{
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, get_in_addr((struct sockaddr *) &client->data.client_addr), client_ip, sizeof(client_ip));
+    int client_port = get_in_port((struct sockaddr *) &client->data.client_addr);
+        
+    fprintf(stdout, "%s %s:%d | %s\n", recv_send, client_ip, client_port, message_type);
+    fflush(stdout);
 }
 
 /**
@@ -317,7 +378,11 @@ void connect_sockets(char *ip_address, int port)
                     continue;
                 }
                 
-                add_client(&clients, comm_socket, 0);
+                if (add_client(&clients, comm_socket, 0))
+                {
+                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                    exit(EXIT_FAILURE);
+                }
             } 
             // client connected to the server with udp
             else if (events[i].data.fd == server_socket_udp)
@@ -331,22 +396,110 @@ void connect_sockets(char *ip_address, int port)
                     continue;
                 }
 
-                if (buff[0] != 0x00)
-                {
-                }
+                // send CONFIRM
                 char *conf = NULL;
                 size_t conf_length = 0;
 
+                if (confirm(&conf, &conf_length, (uint8_t) buff[1], (uint8_t) buff[2]))
+                {
+                    if (conf != NULL) free(conf);
+                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                    exit(EXIT_FAILURE);
+                }
+                
+                char client_ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, get_in_addr(address), client_ip, sizeof(client_ip));
+                int client_port = get_in_port(address);
+                fprintf(stdout, "%s %s:%d | %s\n", "SENT", client_ip, client_port, "CONFIRM");
+                fflush(stdout);
+
                 int bytes_tx = sendto(server_socket_udp, conf, conf_length, 0, address, address_size);
+                if (conf != NULL) free(conf);
+                conf = NULL;
                 if (bytes_tx < 0)
                 {
                     perror("sendto");
+                    remove_client(&clients, server_socket_udp);
                     continue;
                 }
-                
-                free(conf);
+
+                // create new client
+                Client *client = NULL;
+                if (add_client(&clients, server_socket_udp, 1))
+                {
+                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                    exit(EXIT_FAILURE);
+                }
+
+                client = search_client(&clients, server_socket_udp);
+
+                enum message_type msg_type = UKNOWN ;
+                char *response = NULL;
+                size_t response_length = 0;
+
+                int result = next_state_udp(clients, client, buff, &response, &response_length, &msg_type);
+                if (result == 1)
+                {
+                    if (response != NULL) free(response);
+                    response = NULL;
+                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                    exit(EXIT_FAILURE);
+                }
+
+                if (result == -2)
+                {
+                    if (response != NULL) free(response);
+                    response = NULL;
+                    remove_client(&clients, server_socket_udp);
+                    continue;
+                }    
+
+                // create new socket
+                int new_socket = socket(AF_INET, SOCK_DGRAM, 0);
+                if (new_socket <= 0)
+                {
+                    perror("socket");
+                    if (response != NULL) free(response);
+                    response = NULL;
+                    remove_client(&clients, server_socket_udp);
+                    continue;
+                }
+
+                // update epoll with new socket
+                struct epoll_event event_new;
+                memset(&event_new, 0, sizeof(struct epoll_event));
+                event_new.events = EPOLLIN;
+                event_new.data.fd = new_socket;
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_socket, &event_new) == -1)
+                {
+                    perror("epoll_ctl");
+                    remove_client(&clients, server_socket_udp);
+                    close(new_socket);
+                    continue;
+                }
+                client->data.socket = new_socket;
+                client->data.client_addr_len = address_size;
+                memcpy(&(client->data.client_addr), address, address_size);  
+                if (msg_type != UKNOWN) print_addr_port_udp(client, "RECV", message_type_enum[msg_type]);
+
+                // sending REPLY or ERR
+                if (!strncmp(response, "ERR", strlen("ERR")))
+                    print_addr_port_udp(client, "SENT", "ERR");
+                if (!strncmp(response, "REPLY", strlen("REPLY")))
+                    print_addr_port_udp(client, "SENT", "REPLY");
+
+                bytes_tx = sendto(new_socket, response, response_length, 0, address, address_size);
+                if (response != NULL) free(response);
+                response = NULL;
+                if (bytes_tx < 0)
+                {
+                    perror("sendto");
+                    client_end(&clients, new_socket, epoll_fd);
+                    continue;
+                }
+                message_id_increase(&client->data.lsb, &client->data.msb);
             }
-            // tcp connection proccess
+            // already connected clients
             else
             {
                 int comm_socket = events[i].data.fd;
@@ -354,156 +507,17 @@ void connect_sockets(char *ip_address, int port)
                 char buff[BUFFER_SIZE] = {0};
                 char *channel = strdup(client->data.channel);
                 char *response = NULL; 
-                enum message_type msg_type = UKNOWN ;
-                ssize_t bytes_rx = recv(comm_socket, buff, BUFFER_SIZE, 0);
-                // no data received
-                if (bytes_rx < 0)
-                {
-                    // connection closed by client (Ctrl+C)
-                    if (errno == EINTR)
-                    {
-                        if (content_left_msg(&response, client->data.display_name, client->data.channel))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                        if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                    }
-                    // other recv error
-                    else perror("recv");
-                    client_end(&clients, comm_socket, epoll_fd);
-                    free_char_pointers(&channel, &response);
-                    continue;
-                }
-                // connection closed by client
-                else if (bytes_rx == 0)
-                {
-                    if (content_left_msg(&response, client->data.display_name, client->data.channel))
-                    {
-                        end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                        free_char_pointers(&channel, &response);
-                        exit(EXIT_FAILURE);
-                    }
-                    if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
-                    {
-                        end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                        free_char_pointers(&channel, &response);
-                        exit(EXIT_FAILURE);
-                    }
-                    client_end(&clients, comm_socket, epoll_fd);
-                    free_char_pointers(&channel, &response);
-                    continue;
-                }
-                
-                // save received message into client buffer
-                if (modify_client_buff(&client, buff, strlen(buff)))
-                {
-                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                    free_char_pointers(&channel, &response);
-                    exit(EXIT_FAILURE);
-                }
-                // if message does not end with '\r\n', save message for the client and continue
-                if (find_crlf(buff, BUFFER_SIZE) <= 0)
-                {
-                    free_char_pointers(&channel, &response);
-                    continue;
-                }
+                enum message_type msg_type = UKNOWN;
 
-                // found \r\n so now clear client buffer and proccess received message
-                int result = next_state(clients, client, client->data.msg_buff, &response, &msg_type);
-                if (client->data.msg_buff != NULL) free(client->data.msg_buff);
-                client->data.msg_buff = NULL;
-                if (result == 1)
+                if (client->data.protocol == 0)
                 {
-                    end_server(&client, server_socket_tcp, server_socket_udp, epoll_fd);
-                    free_char_pointers(&channel, &response);
-                    exit(EXIT_FAILURE);
-                }
-                if (msg_type != UKNOWN && print_addr_port(client->data.socket, "RECV", message_type_enum[msg_type]))
-                {
-                    end_server(&client, server_socket_tcp, server_socket_udp, epoll_fd);
-                    free_char_pointers(&channel, &response);
-                    exit(EXIT_FAILURE);
-                }
-
-                // received BYE from client
-                if (result == -2)
-                {
-                    // if client already use AUTH remove from list
-                    if (client->data.username != NULL)
+                    ssize_t bytes_rx = recv(comm_socket, buff, BUFFER_SIZE, 0);
+                    // no data received
+                    if (bytes_rx < 0)
                     {
-                        if (response != NULL) free(response);
-                        response = NULL;
-                        if (content_left_msg(&response, client->data.display_name, client->data.channel))
+                        // connection closed by client (Ctrl+C)
+                        if (errno == EINTR)
                         {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                        if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                    }
-                    client_end(&clients, comm_socket, epoll_fd);
-                }
-                // other messages but not MSG or BYE
-                else if (result != -1)
-                {
-                    ssize_t bytes_tx = send(comm_socket, response, strlen(response), 0);
-                    if (bytes_tx < 0)
-                    {
-                        perror("send");
-                        client_end(&clients, comm_socket, epoll_fd);
-                        free_char_pointers(&channel, &response);
-                        continue;
-                    }
-
-                    // ERR message was send, now send BYE
-                    if (!strncmp(response, "ERR", strlen("ERR")))
-                    {
-                        if (print_addr_port(comm_socket, "SENT", message_type_enum[ERR]))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                        if (response != NULL) free(response);
-                        response = NULL;
-                        if (content_bye(&response))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                        bytes_tx = send(comm_socket, response, strlen(response), 0);
-                        if (bytes_tx < 0)
-                        {
-                            perror("send");
-                            client_end(&clients, comm_socket, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            continue;
-                        }
-
-                        if (print_addr_port(comm_socket, "SENT", message_type_enum[BYE]))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                        
-                        if (client->data.display_name != NULL)
-                        {
-                            if (response != NULL) free(response);
-                            response = NULL;
                             if (content_left_msg(&response, client->data.display_name, client->data.channel))
                             {
                                 end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
@@ -517,20 +531,16 @@ void connect_sockets(char *ip_address, int port)
                                 exit(EXIT_FAILURE);
                             }
                         }
+                        // other recv error
+                        else perror("recv");
                         client_end(&clients, comm_socket, epoll_fd);
+                        free_char_pointers(&channel, &response);
+                        continue;
                     }
-                    // REPLY OK message has been sent
-                    else if (!strncmp(response, "REPLY OK", strlen("REPLY OK")))
+                    // connection closed by client
+                    else if (bytes_rx == 0)
                     {
-                        if (print_addr_port(comm_socket, "SENT", message_type_enum[REPLY]))
-                        {
-                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                            free_char_pointers(&channel, &response);
-                            exit(EXIT_FAILURE);
-                        }
-                        if (response != NULL) free(response);
-                        response = NULL;
-                        if (content_joined_msg(&response, client->data.display_name, client->data.channel))
+                        if (content_left_msg(&response, client->data.display_name, client->data.channel))
                         {
                             end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
                             free_char_pointers(&channel, &response);
@@ -542,26 +552,44 @@ void connect_sockets(char *ip_address, int port)
                             free_char_pointers(&channel, &response);
                             exit(EXIT_FAILURE);
                         }
-                        if (strcmp(channel, client->data.channel))
-                        {
-                            if (response != NULL) free(response);
-                            response = NULL;
-                            if (content_left_msg(&response, client->data.display_name, channel))
-                            {
-                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                                free_char_pointers(&channel, &response);
-                                exit(EXIT_FAILURE);
-                            }
-                            if (send_msg_to_clients(clients, comm_socket, channel, response, MSG))
-                            {
-                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                                free_char_pointers(&channel, &response);
-                                exit(EXIT_FAILURE);
-                            }
-                        }
+                        client_end(&clients, comm_socket, epoll_fd);
+                        free_char_pointers(&channel, &response);
+                        continue;
                     }
-                    // BYE message has been sent
-                    else if (!strncmp(response, "BYE", strlen("BYE")))
+                    
+                    // save received message into client buffer
+                    if (modify_client_buff(&client, buff, strlen(buff)))
+                    {
+                        end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                        free_char_pointers(&channel, &response);
+                        exit(EXIT_FAILURE);
+                    }
+                    // if message does not end with '\r\n', save message for the client and continue
+                    if (find_crlf(buff, BUFFER_SIZE) <= 0)
+                    {
+                        free_char_pointers(&channel, &response);
+                        continue;
+                    }
+
+                    // found \r\n so now clear client buffer and proccess received message
+                    int result = next_state(clients, client, client->data.msg_buff, &response, &msg_type);
+                    if (client->data.msg_buff != NULL) free(client->data.msg_buff);
+                    client->data.msg_buff = NULL;
+                    if (result == 1)
+                    {
+                        end_server(&client, server_socket_tcp, server_socket_udp, epoll_fd);
+                        free_char_pointers(&channel, &response);
+                        exit(EXIT_FAILURE);
+                    }
+                    if (msg_type != UKNOWN && print_addr_port(client->data.socket, "RECV", message_type_enum[msg_type]))
+                    {
+                        end_server(&client, server_socket_tcp, server_socket_udp, epoll_fd);
+                        free_char_pointers(&channel, &response);
+                        exit(EXIT_FAILURE);
+                    }
+
+                    // received BYE from client
+                    if (result == -2)
                     {
                         // if client already use AUTH remove from list
                         if (client->data.username != NULL)
@@ -583,18 +611,216 @@ void connect_sockets(char *ip_address, int port)
                         }
                         client_end(&clients, comm_socket, epoll_fd);
                     }
-                }
-                // retransmiting MSG to everyone
-                else
-                {
-                    if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
+                    // other messages but not MSG or BYE
+                    else if (result != -1)
                     {
-                        end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
-                        free_char_pointers(&channel, &response);
-                        exit(EXIT_FAILURE);
+                        ssize_t bytes_tx = send(comm_socket, response, strlen(response), 0);
+                        if (bytes_tx < 0)
+                        {
+                            perror("send");
+                            client_end(&clients, comm_socket, epoll_fd);
+                            free_char_pointers(&channel, &response);
+                            continue;
+                        }
+
+                        // ERR message was send, now send BYE
+                        if (!strncmp(response, "ERR", strlen("ERR")))
+                        {
+                            if (print_addr_port(comm_socket, "SENT", message_type_enum[ERR]))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                exit(EXIT_FAILURE);
+                            }
+                            if (response != NULL) free(response);
+                            response = NULL;
+                            if (content_bye(&response))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                exit(EXIT_FAILURE);
+                            }
+                            bytes_tx = send(comm_socket, response, strlen(response), 0);
+                            if (bytes_tx < 0)
+                            {
+                                perror("send");
+                                client_end(&clients, comm_socket, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                continue;
+                            }
+
+                            if (print_addr_port(comm_socket, "SENT", message_type_enum[BYE]))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                exit(EXIT_FAILURE);
+                            }
+                            
+                            // if client already use AUTH remove from list
+                            if (client->data.display_name != NULL)
+                            {
+                                if (response != NULL) free(response);
+                                response = NULL;
+                                if (content_left_msg(&response, client->data.display_name, client->data.channel))
+                                {
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    free_char_pointers(&channel, &response);
+                                    exit(EXIT_FAILURE);
+                                }
+                                if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
+                                {
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    free_char_pointers(&channel, &response);
+                                    exit(EXIT_FAILURE);
+                                }
+                            }
+                            client_end(&clients, comm_socket, epoll_fd);
+                        }
+                        // REPLY OK message has been sent
+                        else if (!strncmp(response, "REPLY OK", strlen("REPLY OK")))
+                        {
+                            if (print_addr_port(comm_socket, "SENT", message_type_enum[REPLY]))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                exit(EXIT_FAILURE);
+                            }
+                            if (response != NULL) free(response);
+                            response = NULL;
+                            if (content_joined_msg(&response, client->data.display_name, client->data.channel))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                exit(EXIT_FAILURE);
+                            }
+                            if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
+                            {
+                                end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                free_char_pointers(&channel, &response);
+                                exit(EXIT_FAILURE);
+                            }
+                            if (strcmp(channel, client->data.channel))
+                            {
+                                if (response != NULL) free(response);
+                                response = NULL;
+                                if (content_left_msg(&response, client->data.display_name, channel))
+                                {
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    free_char_pointers(&channel, &response);
+                                    exit(EXIT_FAILURE);
+                                }
+                                if (send_msg_to_clients(clients, comm_socket, channel, response, MSG))
+                                {
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    free_char_pointers(&channel, &response);
+                                    exit(EXIT_FAILURE);
+                                }
+                            }
+                        }
+                        // BYE message has been sent
+                        else if (!strncmp(response, "BYE", strlen("BYE")))
+                        {
+                            // if client already use AUTH remove from list
+                            if (client->data.username != NULL)
+                            {
+                                if (response != NULL) free(response);
+                                response = NULL;
+                                if (content_left_msg(&response, client->data.display_name, client->data.channel))
+                                {
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    free_char_pointers(&channel, &response);
+                                    exit(EXIT_FAILURE);
+                                }
+                                if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
+                                {
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    free_char_pointers(&channel, &response);
+                                    exit(EXIT_FAILURE);
+                                }
+                            }
+                            client_end(&clients, comm_socket, epoll_fd);
+                        }
+                    }
+                    // retransmiting MSG to everyone
+                    else
+                    {
+                        if (send_msg_to_clients(clients, comm_socket, client->data.channel, response, MSG))
+                        {
+                            end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                            free_char_pointers(&channel, &response);
+                            exit(EXIT_FAILURE);
+                        }
                     }
                 }
-                
+                else
+                {
+                    // receive message from client
+                    int bytes_rx = recvfrom(comm_socket, buff, BUFFER_SIZE, 0, address, &address_size);
+                    if (bytes_rx < 0)
+                    {
+                        perror("recvfrom");
+                        free_char_pointers(&channel, &response);
+                        client_end(&clients, client->data.socket, epoll_fd);
+                        continue;
+                    }
+                    
+                    size_t response_length = 0;
+                    int result = next_state_udp(clients, client, buff, &response, &response_length, &msg_type);
+                    if (result == 1)
+                    {
+                        free_char_pointers(&channel, &response);
+                        end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                        exit(EXIT_FAILURE);
+                    }
+
+                    if (msg_type == CONFIRM)
+                    {
+                        free_char_pointers(&channel, &response);
+                        continue;
+                    }
+
+                    print_addr_port_udp(client, "RECV", message_type_enum[msg_type]);
+                    char *conf = NULL;
+                    size_t conf_length = 0;
+                    // build CONFIRM message
+                    if (confirm(&conf, &conf_length, (uint8_t) buff[2], (uint8_t) buff[1]))
+                    {
+                        if (conf != NULL) free(conf);
+                        free_char_pointers(&channel, &response);
+                        end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                        exit(EXIT_FAILURE);
+                    }
+
+                    int bytes_tx = sendto(comm_socket, conf, conf_length, 0, address, address_size);
+                    if (conf != NULL) free(conf);
+                    conf = NULL;
+                    if (bytes_tx < 0)
+                    {
+                        perror("sendto");
+                        free_char_pointers(&channel, &response);
+                        remove_client(&clients, server_socket_udp);
+                        continue;
+                    }
+                    // TODO: print addr and port UDP
+                    /*
+                    if (msg_type != UKNOWN && print_addr_port(client->data.socket, "RECV", message_type_enum[msg_type]))
+                    {
+                        free_char_pointers(&channel, &response);
+                        end_server(&client, server_socket_tcp, server_socket_udp, epoll_fd);
+                        exit(EXIT_FAILURE);
+                    }
+                    */
+                    if (result == -2)
+                    {
+                        free_char_pointers(&channel, &response);
+                        remove_client(&clients, server_socket_udp);
+                        continue;
+                    }
+                    if (result == -1)
+                    {
+                        send_msg_to_clients_udp(clients, client->data.socket, client->data.channel, &response, response_length, msg_type);
+                    }
+                }
                 free_char_pointers(&channel, &response);
             }
         }
