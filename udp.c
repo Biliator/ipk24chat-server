@@ -262,7 +262,7 @@ int msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_
 
 int joined_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *channel)
 {
-    *length = strlen(display_name) + strlen(channel) + strlen("Joined ") + 6;
+    *length = strlen(display_name) + strlen(channel) + strlen("Server") + strlen(" has joined ") + 6;
     *content = (char *) malloc(*length);
 
     if (*content == NULL)
@@ -271,13 +271,13 @@ int joined_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *d
         return 1;
     }
 
-    snprintf(*content, *length, "%c%c%c%s%c%s%s%s%c", 0x04, msb, lsb, display_name, 0x00, "Joined ", channel, ".", 0x00);
+    snprintf(*content, *length, "%c%c%c%s%c%s%s%s%s%c", 0x04, msb, lsb, "Server", 0x00, display_name, " has joined ", channel, ".", 0x00);
     return 0;
 }
 
 int left_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *channel)
 {
-    *length = strlen(display_name) + strlen(channel) + strlen("Left ") + 6;
+    *length = strlen(display_name) + strlen(channel) + strlen("Server") + strlen(" has left ") + 6;
     *content = (char *) malloc(*length);
 
     if (*content == NULL)
@@ -286,7 +286,7 @@ int left_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *dis
         return 1;
     }
 
-    snprintf(*content, *length, "%c%c%c%s%c%s%s%s%c", 0x04, msb, lsb, display_name, 0x00, "Left ", channel, ".", 0x00);
+    snprintf(*content, *length, "%c%c%c%s%c%s%s%s%s%c", 0x04, msb, lsb, "Server", 0x00, display_name, " has left ", channel, ".", 0x00);
     return 0;
 }
 

@@ -208,7 +208,7 @@ int next_state(Client *clients, Client *client, char *buff, char **response, enu
     case START:
         if (*msg_type == AUTH)
         {
-            if (!search_client_name(clients, param1))
+            if (!search_client_name(clients, param1) && strcmp(param1, param2))
             {
                 client->data.state = OPEN;
                 client->data.username = strdup(param1);
@@ -308,7 +308,7 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
         {
             char *message_contents = NULL;
             int result = 0;
-            if (!search_client_name(clients, param1))
+            if (!search_client_name(clients, param1) && strcmp(param1, param2))
             {
                 result = 1;
                 client->data.username = strdup(param1);
@@ -360,7 +360,6 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
     case OPEN:
         if (*msg_type == MSG)
         {
-            printf(">%s<\n", param2);
             if (msg(response, response_length, (uint8_t) 0, (uint8_t) 0, param1, param2))
             {
                 fprintf(stderr, "ERROR: Memory allocation failed!\n");
@@ -368,7 +367,6 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
                 if (param2 != NULL) free(param2);
                 return 1;
             }
-            printf("-%ld-\n", *response_length);
             result = -1;
         }
         else if (*msg_type == JOIN)
