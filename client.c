@@ -311,8 +311,16 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
             if (!search_client_name(clients, param1))
             {
                 result = 1;
-                message_contents = strdup("Auth success.");
+                client->data.username = strdup(param1);
+                client->data.display_name = strdup(param2);
+                client->data.secret = strdup(param3);
+                if (client->data.username == NULL || client->data.display_name == NULL || client->data.secret == NULL)
+                {
+                    fprintf(stderr, "ERR: Memory allocation failed!\n");
+                    return 1;
+                }
                 client->data.state = OPEN;
+                message_contents = strdup("Auth success.");
                 if (message_contents == NULL)
                 {
                     fprintf(stderr, "ERR: Memory allocation failed!\n");
@@ -340,6 +348,10 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
         {
             result = bye(response, response_length, client->data.lsb, client->data.msb);
         }
+        else if (*msg_type == JOIN || *msg_type == MSG)
+        {
+             result = err(response, response_length, client->data.lsb, client->data.msb, "Server", "You are not allowed to do that!");
+        }
         else
         {
             result = err(response, response_length, client->data.lsb, client->data.msb, "Server", "Uknown message!");
@@ -348,6 +360,7 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
     case OPEN:
         if (*msg_type == MSG)
         {
+            printf(">%s<\n", param2);
             if (msg(response, response_length, (uint8_t) 0, (uint8_t) 0, param1, param2))
             {
                 fprintf(stderr, "ERROR: Memory allocation failed!\n");
@@ -355,12 +368,18 @@ int next_state_udp(Client *clients, Client *client, char *buff, char **response,
                 if (param2 != NULL) free(param2);
                 return 1;
             }
+            printf("-%ld-\n", *response_length);
             result = -1;
         }
         else if (*msg_type == JOIN)
         {
             if (client->data.channel != NULL) free(client->data.channel);
             client->data.channel = strdup(param1);
+            if (client->data.channel == NULL)
+            {
+                fprintf(stderr, "ERR: Memory allocation failed!\n");
+                return 1;
+            }
             result = reply(response, response_length, client->data.lsb, client->data.msb, 1, (uint8_t) buff[1], (uint8_t) buff[2], "Join success.");
         }
         else if (*msg_type == ERR)

@@ -40,18 +40,18 @@ int udp_message_next(char input[], char **output, int start, size_t input_size)
 int check_auth_udp(char *buff, char **param1, char **param2, char **param3)
 {
     if (buff[0] != 0x02) return 0;
-    if (udp_message_next(buff, param1, 3, sizeof(buff)))
+    if (udp_message_next(buff, param1, 3, 1500))
     {
         if (*param1 != NULL) free(*param1);
         return -1;
     }
-    if (udp_message_next(buff, param2, strlen(*param1) + 4, sizeof(buff)))
+    if (udp_message_next(buff, param2, strlen(*param1) + 4, 1500))
     {
         if (*param1 != NULL) free(*param1);
         if (*param2 != NULL) free(*param2);
         return -1;
     }
-    if (udp_message_next(buff, param3, 3, sizeof(buff)))
+    if (udp_message_next(buff, param3, strlen(*param1) + strlen(*param2) + 5, 1500))
     {
         if (*param1 != NULL) free(*param1);
         if (*param2 != NULL) free(*param2);
@@ -67,12 +67,12 @@ int check_auth_udp(char *buff, char **param1, char **param2, char **param3)
 int check_msg_udp(char *buff, char **param1, char **param2)
 {
     if (buff[0] != 0x04) return 0;
-    if (udp_message_next(buff, param1, 3, sizeof(buff)))
+    if (udp_message_next(buff, param1, 3, 1500))
     {
         if (*param1 != NULL) free(*param1);
         return -1;
     }
-    if (udp_message_next(buff, param2, strlen(*param1) + 4, sizeof(buff)))
+    if (udp_message_next(buff, param2, strlen(*param1) + 4, 1500))
     {
         if (*param1 != NULL) free(*param1);
         if (*param2 != NULL) free(*param2);
@@ -87,12 +87,12 @@ int check_msg_udp(char *buff, char **param1, char **param2)
 int check_join_udp(char *buff, char **param1, char **param2)
 {
     if (buff[0] != 0x03) return 0;
-    if (udp_message_next(buff, param1, 3, sizeof(buff)))
+    if (udp_message_next(buff, param1, 3, 1500))
     {
         if (*param1 != NULL) free(*param1);
         return -1;
     }
-    if (udp_message_next(buff, param2, strlen(*param1) + 4, sizeof(buff)))
+    if (udp_message_next(buff, param2, strlen(*param1) + 4, 1500))
     {
         if (*param1 != NULL) free(*param1);
         if (*param2 != NULL) free(*param2);
@@ -107,12 +107,12 @@ int check_join_udp(char *buff, char **param1, char **param2)
 int check_err_udp(char *buff, char **param1, char **param2)
 {
     if (buff[0] != -2) return 0;
-    if (udp_message_next(buff, param1, 3, sizeof(buff)))
+    if (udp_message_next(buff, param1, 3, 1500))
     {
         if (*param1 != NULL) free(*param1);
         return -1;
     }
-    if (udp_message_next(buff, param2, strlen(*param1) + 4, sizeof(buff)))
+    if (udp_message_next(buff, param2, strlen(*param1) + 4, 1500))
     {
         if (*param1 != NULL) free(*param1);
         if (*param2 != NULL) free(*param2);
@@ -257,6 +257,36 @@ int msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_
     }
 
     snprintf(*content, *length, "%c%c%c%s%c%s%c", 0x04, msb, lsb, display_name, 0x00, message_contents, 0x00);
+    return 0;
+}
+
+int joined_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *channel)
+{
+    *length = strlen(display_name) + strlen(channel) + strlen("Joined ") + 6;
+    *content = (char *) malloc(*length);
+
+    if (*content == NULL)
+    {
+        fprintf(stderr, "ERR: Memory allocation failed!\n");
+        return 1;
+    }
+
+    snprintf(*content, *length, "%c%c%c%s%c%s%s%s%c", 0x04, msb, lsb, display_name, 0x00, "Joined ", channel, ".", 0x00);
+    return 0;
+}
+
+int left_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *channel)
+{
+    *length = strlen(display_name) + strlen(channel) + strlen("Left ") + 6;
+    *content = (char *) malloc(*length);
+
+    if (*content == NULL)
+    {
+        fprintf(stderr, "ERR: Memory allocation failed!\n");
+        return 1;
+    }
+
+    snprintf(*content, *length, "%c%c%c%s%c%s%s%s%c", 0x04, msb, lsb, display_name, 0x00, "Left ", channel, ".", 0x00);
     return 0;
 }
 

@@ -12,4 +12,6 @@ int confirm(char **content, size_t *length, uint8_t lsb, uint8_t msb);
 int reply(char **content, size_t *length, uint8_t lsb, uint8_t msb, uint8_t result, uint8_t ref_lsb, uint8_t ref_msb, char *message_contents);
 int err(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *message_contents);
 int msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *message_contents);
+int joined_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *channel);
+int left_msg(char **content, size_t *length, uint8_t lsb, uint8_t msb, char *display_name, char *channel);
 int bye(char **content, size_t *length, uint8_t lsb, uint8_t msb);
