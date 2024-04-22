@@ -27,7 +27,7 @@ volatile sig_atomic_t received_signal = 0;
 
 void handle_interrupt(int signum);
 void print_help();
-void free_char_pointers(char **string1, char **string2);
+void free_char_pointers(char **string1, char **string2, char **string3);
 int send_msg_to_clients(Client *clients, int sender_socket, char *channel, const char *message, enum message_type msg_type);
 int send_msg_to_clients_udp(Client *clients, int sender_socket, char *channel, char **message, size_t msg_length, enum message_type msg_type);
 void client_end(Client **clients, int comm_socket, int epoll_fd);

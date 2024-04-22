@@ -192,7 +192,7 @@ int modify_client_buff(Client **client, const char *buff, size_t buff_len)
  * @return int result returns 1 if error occured, -1 if received message is MSG type, -2 if
  * received message is BYE type, everything else is 0
  */
-int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type)
+int next_state(Client *clients, Client *client, char *buff, char **response, char **response_udp, size_t *response_len, enum message_type *msg_type)
 {
     char *param1 = NULL;
     char *param2 = NULL;
@@ -239,14 +239,19 @@ int next_state(Client *clients, Client *client, char *buff, char **response, enu
     case OPEN:
         if (*msg_type == MSG)
         {
-            if (param1 != NULL) free(param1);
-            if (param2 != NULL) free(param2);
             *response = strdup(buff);
             if (*response == NULL)
             {
                 fprintf(stderr, "ERROR: Memory allocation failed!\n");
                 return 1;
             }
+            if (msg(response_udp, response_len, (uint8_t) 0, (uint8_t) 0, param1, param2))
+            {
+                fprintf(stderr, "ERROR: Memory allocation failed!\n");
+                return 1;
+            }
+            if (param1 != NULL) free(param1);
+            if (param2 != NULL) free(param2);
             result = -1;
         }
         else if (*msg_type == JOIN)

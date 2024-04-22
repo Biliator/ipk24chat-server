@@ -41,6 +41,6 @@ int search_client_name(Client *clients, char *display_name);
 void remove_client(Client **clients, int socket);
 void free_clients(Client **clients);
 int modify_client_buff(Client **client, const char *buff, size_t buff_len);
-int next_state(Client *clients, Client *client, char *buff, char **response, enum message_type *msg_type);
+int next_state(Client *clients, Client *client, char *buff, char **response, char **response_udp, size_t *response_len, enum message_type *msg_type);
 
 int next_state_udp(Client *clients, Client *client, char *buff, char **response, size_t *response_length, enum message_type *msg_type);
