@@ -902,6 +902,20 @@ void connect_sockets(char *ip_address, int port)
                             {
                                 if (response != NULL) free(response);
                                 response = NULL;
+                                if (left_msg(&response, &response_length, client->data.lsb, client->data.msb, client->data.display_name, channel))
+                                {
+                                    free_char_pointers(&channel, &response);
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    exit(EXIT_FAILURE);
+                                }
+                                if (send_msg_to_clients_udp(clients, client->data.socket, channel, &response, response_length, MSG))
+                                {
+                                    free_char_pointers(&channel, &response);
+                                    end_server(&clients, server_socket_tcp, server_socket_udp, epoll_fd);
+                                    exit(EXIT_FAILURE);
+                                } 
+                                if (response != NULL) free(response);
+                                response = NULL;
                                 if (joined_msg(&response, &response_length, client->data.lsb, client->data.msb, client->data.display_name, client->data.channel))
                                 {
                                     if (response != NULL) free(response);
